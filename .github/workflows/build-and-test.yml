@@ -1,0 +1,89 @@
+name: Build and Test CmdPal (Windows)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  windows-build-and-test:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Run excluded-feature static check
+        run: python scripts/check_excluded_features.py
+
+      - name: Configure CMake (Release)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build CmdPal and tests
+        run: cmake --build build --config Release --parallel
+
+      - name: Run automated unit, integration, and regression tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Audit binary DLL dependencies (no .NET, no WebView2/Chromium)
+        shell: pwsh
+        run: |
+          $deps = dumpbin /dependents build\Release\CmdPal.exe | Out-String
+          Write-Output $deps
+          if ($deps -match "WebView2|libcef|node\.dll|mscoree|clr\.dll") {
+            throw "Forbidden runtime dependency detected in CmdPal.exe!"
+          }
+
+      - name: Package portable Windows artifact, SBOM, and SHA-256 checksums
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/CmdPal-Portable-win64 | Out-Null
+          Copy-Item build/Release/CmdPal.exe dist/CmdPal-Portable-win64/
+          Copy-Item README.md dist/CmdPal-Portable-win64/README.txt
+          Copy-Item LICENSE dist/CmdPal-Portable-win64/
+          Copy-Item docs/SECURITY_AND_PRIVACY.md dist/CmdPal-Portable-win64/
+
+          $sbom = @{
+            bomFormat = "CycloneDX"
+            specVersion = "1.5"
+            metadata = @{
+              component = @{
+                name = "CmdPal"
+                version = "1.0.0"
+                type = "application"
+                licenses = @(@{ license = @{ id = "MIT" } })
+              }
+            }
+            components = @(
+              @{ name = "C++20 Standard Library (MSVC Static CRT)"; type = "library" },
+              @{ name = "Windows SDK System Libraries (user32, gdi32, shell32, advapi32, ole32, shlwapi, dwmapi, comctl32)"; type = "operating-system" }
+            )
+          } | ConvertTo-Json -Depth 6
+          $sbom | Out-File -Encoding utf8 dist/CmdPal-Portable-win64/sbom.json
+
+          Compress-Archive -Path dist/CmdPal-Portable-win64/* -DestinationPath dist/CmdPal-Portable-win64.zip -Force
+          $hash = (Get-FileHash dist/CmdPal-Portable-win64.zip -Algorithm SHA256).Hash
+          "$hash  CmdPal-Portable-win64.zip" | Out-File -Encoding ascii dist/SHA256SUMS.txt
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Upload test logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmdpal-test-logs
+          path: build/Testing/Temporary/
+
+      - name: Upload portable Windows artifact (unsigned CI build)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CmdPal-Portable-win64
+          path: |
+            dist/CmdPal-Portable-win64.zip
+            dist/SHA256SUMS.txt
