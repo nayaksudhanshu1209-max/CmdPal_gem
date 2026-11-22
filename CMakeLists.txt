@@ -5,6 +5,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 set(CMDPAL_CORE_SOURCES
     src/core/Json.cpp
     src/core/SettingsStore.cpp
@@ -55,7 +59,7 @@ if(WIN32)
     )
     if(MSVC)
         target_compile_options(CmdPal PRIVATE /W4 /utf-8)
-        set_property(TARGET CmdPal PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        target_link_options(CmdPal PRIVATE /MANIFEST:NO)
     endif()
 endif()
 
