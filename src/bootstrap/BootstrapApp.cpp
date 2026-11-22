@@ -1,8 +1,10 @@
 #include "bootstrap/Bootstrap.hpp"
 
 #ifdef _WIN32
+#include "features/filesearch/FileSearchCoordinator.hpp"
 #include "features/notes/NotesView.hpp"
 #include "features/palette/PaletteView.hpp"
+#include "features/quickfolders/QuickFoldersCoordinator.hpp"
 #include "features/settings/SettingsView.hpp"
 #include "platform/Win32PlatformServices.hpp"
 
